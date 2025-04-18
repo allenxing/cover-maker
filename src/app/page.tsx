@@ -51,12 +51,8 @@ export default function Home() {
           >
             Read our docs
           </a>
-          <Button
-            className="px-4 py-6 rounded-full bg-white text-foreground hover:bg-[#f2f2f2]"
-            size="sm"
-          >
-            Get Started
-          </Button>
+
+          <Button>Button</Button>
         </div>
       </main>
       <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">

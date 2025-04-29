@@ -148,6 +148,7 @@ export default function CoverEditor({
   // 获取所有其他元素的边界
   // were can we snap our objects?
   const getLineGuideStops = (skipShape: KonvaNode) => {
+    console.log("skipShape", skipShape);
     // we can snap to stage borders and the center of the stage
     if (!layerRef.current) {
       return;
@@ -168,10 +169,13 @@ export default function CoverEditor({
       // console.log("node", node.getAttr("name"));
       return node.getAttr("name") !== "line";
     });
+    console.log("nodes", nodes.length);
     nodes.forEach((guideItem: KonvaNode) => {
       if (guideItem === skipShape) {
+        // console.log("skipShape", guideItem);
         return;
       }
+      console.log(1);
       const box = guideItem.getClientRect();
       // and we can snap to all edges of shapes
       vertical.push([box.x, box.x + box.width, box.x + box.width / 2]);
@@ -288,6 +292,9 @@ export default function CoverEditor({
 
   const handleLayerDragMove = (e: any) => {
     const node = e.target;
+    if (node instanceof KonvaTransformer) {
+      return;
+    }
     setGuidelines([]);
     const lineGuideStops = getLineGuideStops(node);
     console.log("lineGuideStops", lineGuideStops);

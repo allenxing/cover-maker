@@ -7,13 +7,30 @@ import {
   Text,
   Transformer,
   Group,
+  Line,
 } from "react-konva";
 import { useState, useRef, useEffect } from "react";
 import { Transformer as KonvaTransformer } from "konva/lib/shapes/Transformer";
 import { Stage as KonvaStage } from "konva/lib/Stage";
-import { Node as KonvaNode } from "konva/lib/Node";
+import { Node as KonvaNode, Node } from "konva/lib/Node";
 import { Button } from "@/components/ui/button";
 import { Rect as KonvaRect } from "konva/lib/shapes/Rect";
+import { Layer as KonvaLayer } from "konva/lib/Layer";
+import { Group as KonvaGroup } from "konva/lib/Group";
+
+interface GuidLine {
+  lineGuide: number;
+  offset: number;
+  orientation: "V" | "H";
+  snap: number;
+}
+
+const coverSize = {
+  width: 800,
+  height: 600,
+};
+
+const GUIDELINE_OFFSET = 5;
 
 export default function CoverEditor({
   children,
@@ -24,6 +41,7 @@ export default function CoverEditor({
   const transformerRef = useRef<KonvaTransformer>(null);
   const borderRef = useRef<KonvaTransformer>(null);
   const stageRef = useRef<KonvaStage>(null);
+  const layerRef = useRef<KonvaLayer>(null);
   useEffect(() => {
     if (selectedNodes.length && transformerRef.current) {
       // const nodes = selectedNodes.map((id) => {
@@ -119,6 +137,190 @@ export default function CoverEditor({
     // console.log("out", event.target);
   };
 
+  const [rects, setRects] = useState([
+    { id: "1", x: 50, y: 50, width: 100, height: 50 },
+    { id: "2", x: 200, y: 150, width: 100, height: 50 },
+  ]);
+
+  const [guidelines, setGuidelines] = useState<Array<GuidLine>>([]);
+  const movingNode = useRef<KonvaNode>(null);
+  const SNAP_THRESHOLD = 5;
+  // 获取所有其他元素的边界
+  // were can we snap our objects?
+  const getLineGuideStops = (skipShape: KonvaNode) => {
+    // we can snap to stage borders and the center of the stage
+    if (!layerRef.current) {
+      return;
+    }
+    const vertical: any = [0, coverSize.width / 2, coverSize.width];
+    const horizontal: any = [0, coverSize.height / 2, coverSize.height];
+    const groupNode: KonvaGroup | undefined = layerRef.current.findOne(
+      (node: KonvaNode) => {
+        return node.nodeType === "Group";
+      }
+    );
+    if (!groupNode) {
+      return;
+    }
+    // and we snap over edges and center of each object on the canvas
+    console.log("groupNode children", groupNode.children);
+    const nodes = groupNode.getChildren((node) => {
+      // console.log("node", node.getAttr("name"));
+      return node.getAttr("name") !== "line";
+    });
+    nodes.forEach((guideItem: KonvaNode) => {
+      if (guideItem === skipShape) {
+        return;
+      }
+      const box = guideItem.getClientRect();
+      // and we can snap to all edges of shapes
+      vertical.push([box.x, box.x + box.width, box.x + box.width / 2]);
+      horizontal.push([box.y, box.y + box.height, box.y + box.height / 2]);
+    });
+    return {
+      vertical: vertical.flat(),
+      horizontal: horizontal.flat(),
+    };
+  };
+
+  // what points of the object will trigger to snapping?
+  // it can be just center of the object
+  // but we will enable all edges and center
+  const getObjectSnappingEdges = (node: KonvaNode) => {
+    const box = node.getClientRect();
+    const absPos = node.absolutePosition();
+
+    return {
+      vertical: [
+        {
+          guide: Math.round(box.x),
+          offset: Math.round(absPos.x - box.x),
+          snap: "start",
+        },
+        {
+          guide: Math.round(box.x + box.width / 2),
+          offset: Math.round(absPos.x - box.x - box.width / 2),
+          snap: "center",
+        },
+        {
+          guide: Math.round(box.x + box.width),
+          offset: Math.round(absPos.x - box.x - box.width),
+          snap: "end",
+        },
+      ],
+      horizontal: [
+        {
+          guide: Math.round(box.y),
+          offset: Math.round(absPos.y - box.y),
+          snap: "start",
+        },
+        {
+          guide: Math.round(box.y + box.height / 2),
+          offset: Math.round(absPos.y - box.y - box.height / 2),
+          snap: "center",
+        },
+        {
+          guide: Math.round(box.y + box.height),
+          offset: Math.round(absPos.y - box.y - box.height),
+          snap: "end",
+        },
+      ],
+    };
+  };
+
+  // find all snapping possibilities
+  const getGuides = (lineGuideStops: any, itemBounds: any) => {
+    const resultV: any = [];
+    const resultH: any = [];
+
+    lineGuideStops.vertical.forEach((lineGuide: any) => {
+      itemBounds.vertical.forEach((itemBound: any) => {
+        const diff = Math.abs(lineGuide - itemBound.guide);
+        // if the distance between guild line and object snap point is close we can consider this for snapping
+        if (diff < GUIDELINE_OFFSET) {
+          resultV.push({
+            lineGuide: lineGuide,
+            diff: diff,
+            snap: itemBound.snap,
+            offset: itemBound.offset,
+          });
+        }
+      });
+    });
+
+    lineGuideStops.horizontal.forEach((lineGuide: any) => {
+      itemBounds.horizontal.forEach((itemBound: any) => {
+        const diff = Math.abs(lineGuide - itemBound.guide);
+        if (diff < GUIDELINE_OFFSET) {
+          resultH.push({
+            lineGuide: lineGuide,
+            diff: diff,
+            snap: itemBound.snap,
+            offset: itemBound.offset,
+          });
+        }
+      });
+    });
+
+    const guides: GuidLine[] = [];
+
+    // find closest snap
+    const minV = resultV.sort((a: any, b: any) => a.diff - b.diff)[0];
+    const minH = resultH.sort((a: any, b: any) => a.diff - b.diff)[0];
+    if (minV) {
+      guides.push({
+        lineGuide: minV.lineGuide,
+        offset: minV.offset,
+        orientation: "V",
+        snap: minV.snap,
+      });
+    }
+    if (minH) {
+      guides.push({
+        lineGuide: minH.lineGuide,
+        offset: minH.offset,
+        orientation: "H",
+        snap: minH.snap,
+      });
+    }
+    return guides;
+  };
+
+  const handleLayerDragMove = (e: any) => {
+    const node = e.target;
+    setGuidelines([]);
+    const lineGuideStops = getLineGuideStops(node);
+    console.log("lineGuideStops", lineGuideStops);
+    // find snapping points of current object
+    const itemBounds = getObjectSnappingEdges(node);
+    // now find where can we snap current object
+    const guidelines: GuidLine[] = getGuides(lineGuideStops, itemBounds);
+    console.log("guidelines", guidelines);
+    // do nothing of no snapping
+    setGuidelines(guidelines || []);
+    movingNode.current = node;
+  };
+
+  const handleLayerDragEnd = () => {
+    // 更新状态保存新位置
+    if (!movingNode.current) {
+      return;
+    }
+    if (movingNode && movingNode.current) {
+      const index = rects.findIndex(
+        (r) => r.id === (movingNode.current && movingNode.current.id())
+      );
+      const newRects = [...rects];
+      newRects[index] = {
+        ...newRects[index],
+        x: movingNode.current.x(),
+        y: movingNode.current.y(),
+      };
+      setRects(newRects);
+      setGuidelines([]);
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
       {children}
@@ -134,11 +336,26 @@ export default function CoverEditor({
         {/* <Layer>
           <Rect x={20} y={50} width={500} height={500} fill="blue" />
         </Layer> */}
-        <Layer>
+        <Layer
+          ref={layerRef}
+          onDragMove={handleLayerDragMove}
+          onDragEnd={handleLayerDragEnd}
+          clipX={100}
+          clipY={100}
+        >
           {/* <Text text="Try to drag shapes" fontSize={15} /> */}
           {/* cover size 800*600  */}
-          <Rect id="bg" x={100} y={100} width={800} height={600} fill="gray" />
-          <Group clipX={100} clipY={100} clipWidth={800} clipHeight={600}>
+          <Rect
+            id="bg"
+            width={coverSize.width}
+            height={coverSize.height}
+            fill="gray"
+          />
+          <Group
+            id="rootGroup"
+            clipWidth={coverSize.width}
+            clipHeight={coverSize.height}
+          >
             <Rect
               x={100}
               y={100}
@@ -156,6 +373,47 @@ export default function CoverEditor({
               draggable
               stroke={"black"}
             />
+            {rects.map((rect) => (
+              <Rect
+                key={rect.id}
+                id={rect.id}
+                x={rect.x}
+                y={rect.y}
+                width={rect.width}
+                height={rect.height}
+                fill="#00D2FF"
+                draggable
+                // onDragMove={handleDragMove}
+                // onDragEnd={handleDragEnd}
+              />
+            ))}
+            {/* 绘制提示线 */}
+            {guidelines.map((line, i) => {
+              if (line.orientation === "H") {
+                return (
+                  <Line
+                    key={i}
+                    name="line"
+                    points={[-6000, 0, 6000, 0]}
+                    stroke="red"
+                    strokeWidth={1}
+                    x={0}
+                    y={line.lineGuide}
+                  />
+                );
+              }
+              return (
+                <Line
+                  key={i}
+                  name="line"
+                  points={[0, -6000, 0, 6000]}
+                  stroke="red"
+                  strokeWidth={1}
+                  x={line.lineGuide}
+                  y={0}
+                />
+              );
+            })}
           </Group>
           <Transformer
             ref={transformerRef}

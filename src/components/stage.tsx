@@ -304,7 +304,25 @@ export default function CoverEditor({
     const guidelines: GuidLine[] = getGuides(lineGuideStops, itemBounds);
     console.log("guidelines", guidelines);
     // do nothing of no snapping
-    setGuidelines(guidelines || []);
+    if (guidelines.length === 0) {
+      return;
+    }
+    setGuidelines(guidelines);
+    const absPos = node.absolutePosition();
+    // now force object position
+    guidelines.forEach((lg) => {
+      switch (lg.orientation) {
+        case "V": {
+          absPos.x = lg.lineGuide + lg.offset;
+          break;
+        }
+        case "H": {
+          absPos.y = lg.lineGuide + lg.offset;
+          break;
+        }
+      }
+    });
+    node.absolutePosition(absPos);
     movingNode.current = node;
   };
 

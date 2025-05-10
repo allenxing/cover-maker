@@ -24,7 +24,11 @@ interface GuidLine {
   orientation: "V" | "H";
   snap: number;
 }
-
+const stageSize = {
+  width: 1000,
+  height: 800,
+};
+// 需要根据stage size 来计算
 const coverSize = {
   width: 800,
   height: 600,
@@ -153,8 +157,16 @@ export default function CoverEditor({
     if (!layerRef.current) {
       return;
     }
-    const vertical: any = [0, coverSize.width / 2, coverSize.width];
-    const horizontal: any = [0, coverSize.height / 2, coverSize.height];
+    const vertical: any = [
+      0,
+      coverSize.width / 2 + (stageSize.width - coverSize.width) / 2,
+      coverSize.width,
+    ];
+    const horizontal: any = [
+      0,
+      coverSize.height / 2 + (stageSize.height - coverSize.height) / 2,
+      coverSize.height,
+    ];
     const groupNode: KonvaGroup | undefined = layerRef.current.findOne(
       (node: KonvaNode) => {
         return node.nodeType === "Group";
@@ -175,7 +187,6 @@ export default function CoverEditor({
         // console.log("skipShape", guideItem);
         return;
       }
-      console.log(1);
       const box = guideItem.getClientRect();
       // and we can snap to all edges of shapes
       vertical.push([box.x, box.x + box.width, box.x + box.width / 2]);
@@ -193,6 +204,9 @@ export default function CoverEditor({
   const getObjectSnappingEdges = (node: KonvaNode) => {
     const box = node.getClientRect();
     const absPos = node.absolutePosition();
+    console.log("absolutePosition", absPos);
+    console.log("Position", node.position());
+    console.log("box", box);
 
     return {
       vertical: [
@@ -350,13 +364,21 @@ export default function CoverEditor({
     <div className="flex flex-col items-center justify-center w-full h-full">
       {children}
       <Button onClick={exportImage}>export</Button>
+      {rects.map((item) => {
+        return (
+          <div key={item.id}>
+            {item.x}: {item.y}
+          </div>
+        );
+      })}
       <Stage
-        width={1000}
-        height={800}
+        width={stageSize.width}
+        height={stageSize.height}
         onClick={handleStageClick}
         ref={stageRef}
         onMouseOver={onStageEnter}
         onMouseOut={onStageOut}
+        // offsetX={-100}
       >
         {/* <Layer>
           <Rect x={20} y={50} width={500} height={500} fill="blue" />
@@ -365,8 +387,13 @@ export default function CoverEditor({
           ref={layerRef}
           onDragMove={handleLayerDragMove}
           onDragEnd={handleLayerDragEnd}
-          clipX={100}
-          clipY={100}
+          // clipWidth={coverSize.width}
+          // clipHeight={coverSize.height}
+          // clipX={100}
+          // clipY={100}
+          x={(stageSize.width - coverSize.width) / 2}
+          y={(stageSize.height - coverSize.height) / 2}
+          // offetY={-(800 - coverSize.height) / 2}
         >
           {/* <Text text="Try to drag shapes" fontSize={15} /> */}
           {/* cover size 800*600  */}
@@ -376,12 +403,29 @@ export default function CoverEditor({
             height={coverSize.height}
             fill="gray"
           />
+          <Rect
+            x={100}
+            y={100}
+            width={100}
+            height={100}
+            fill="red"
+            shadowBlur={10}
+            draggable
+          />
+          <Circle
+            x={250}
+            y={150}
+            radius={50}
+            fill="green"
+            draggable
+            stroke={"black"}
+          />
           <Group
             id="rootGroup"
             clipWidth={coverSize.width}
             clipHeight={coverSize.height}
           >
-            <Rect
+            {/* <Rect
               x={100}
               y={100}
               width={100}
@@ -397,7 +441,7 @@ export default function CoverEditor({
               fill="green"
               draggable
               stroke={"black"}
-            />
+            /> */}
             {rects.map((rect) => (
               <Rect
                 key={rect.id}
@@ -423,7 +467,9 @@ export default function CoverEditor({
                     stroke="red"
                     strokeWidth={1}
                     x={0}
-                    y={line.lineGuide}
+                    y={
+                      line.lineGuide - (stageSize.height - coverSize.height) / 2
+                    }
                   />
                 );
               }
@@ -434,7 +480,7 @@ export default function CoverEditor({
                   points={[0, -6000, 0, 6000]}
                   stroke="red"
                   strokeWidth={1}
-                  x={line.lineGuide}
+                  x={line.lineGuide - (stageSize.width - coverSize.width) / 2}
                   y={0}
                 />
               );

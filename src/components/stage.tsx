@@ -9,6 +9,9 @@ import {
   Group,
   Line,
 } from "react-konva";
+// import { useKonvaSnapping } from "use-konva-snapping";
+import { useKonvaSnapping } from "./useSnapping";
+
 import { useState, useRef, useEffect } from "react";
 import { Transformer as KonvaTransformer } from "konva/lib/shapes/Transformer";
 import { Stage as KonvaStage } from "konva/lib/Stage";
@@ -22,7 +25,7 @@ interface GuidLine {
   lineGuide: number;
   offset: number;
   orientation: "V" | "H";
-  snap: number;
+  snap: string;
 }
 const stageSize = {
   width: 1000,
@@ -34,7 +37,9 @@ const coverSize = {
   height: 600,
 };
 
-const GUIDELINE_OFFSET = 5;
+const GUIDELINE_OFFSET = 10;
+
+const GUIDELINE_COLOR = "#0099ff";
 
 export default function CoverEditor({
   children,
@@ -48,12 +53,6 @@ export default function CoverEditor({
   const layerRef = useRef<KonvaLayer>(null);
   useEffect(() => {
     if (selectedNodes.length && transformerRef.current) {
-      // const nodes = selectedNodes.map((id) => {
-      //   console.log(id);
-      //   const node = stageRef.current?.findOne(`${id}`);
-      //   console.log(node);
-      //   return node;
-      // });
       if (transformerRef.current) {
         transformerRef.current.setNodes(selectedNodes);
       }
@@ -64,6 +63,37 @@ export default function CoverEditor({
       }
     }
   }, [selectedNodes]);
+
+  // 键盘事件
+  useEffect(() => {
+    const handleKeyDown = (e: Event | any) => {
+      if (selectedNodes.length === 0) return;
+      selectedNodes.forEach((node) => {
+        e.preventDefault(); // 阻止默认行为
+        switch (e.key) {
+          case "ArrowLeft":
+            node.x(node.x() - (e.ctrlKey ? 10 : 5));
+            break;
+          case "ArrowRight":
+            node.x(node.x() + (e.ctrlKey ? 10 : 5));
+            break;
+          case "ArrowUp":
+            node.y(node.y() - (e.ctrlKey ? 10 : 5));
+            break;
+          case "ArrowDown":
+            node.y(node.y() + (e.ctrlKey ? 10 : 5));
+            break;
+          default:
+            return;
+        }
+        node.getLayer().batchDraw();
+      });
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedNodes]);
+
   // https://konvajs.org/docs/select_and_transform/Basic_demo.html
   const handleStageClick = (event: any) => {
     // If click on empty area - remove all selections
@@ -75,9 +105,6 @@ export default function CoverEditor({
       setSelectedNodes([]);
       return;
     }
-    // if (borderRef && borderRef.current) {
-    //   borderRef.current.hide();
-    // }
     if (borderRef && borderRef.current) {
       borderRef.current.setNodes([]);
     }
@@ -148,215 +175,32 @@ export default function CoverEditor({
 
   const [guidelines, setGuidelines] = useState<Array<GuidLine>>([]);
   const movingNode = useRef<KonvaNode>(null);
-  const SNAP_THRESHOLD = 5;
-  // 获取所有其他元素的边界
-  // were can we snap our objects?
-  const getLineGuideStops = (skipShape: KonvaNode) => {
-    console.log("skipShape", skipShape);
-    // we can snap to stage borders and the center of the stage
-    if (!layerRef.current) {
-      return;
-    }
-    const vertical: any = [
-      0,
-      coverSize.width / 2 + (stageSize.width - coverSize.width) / 2,
-      coverSize.width,
-    ];
-    const horizontal: any = [
-      0,
-      coverSize.height / 2 + (stageSize.height - coverSize.height) / 2,
-      coverSize.height,
-    ];
-    const groupNode: KonvaGroup | undefined = layerRef.current.findOne(
-      (node: KonvaNode) => {
-        return node.nodeType === "Group";
-      }
-    );
-    if (!groupNode) {
-      return;
-    }
-    // and we snap over edges and center of each object on the canvas
-    console.log("groupNode children", groupNode.children);
-    const nodes = groupNode.getChildren((node) => {
-      // console.log("node", node.getAttr("name"));
-      return node.getAttr("name") !== "line";
-    });
-    console.log("nodes", nodes.length);
-    nodes.forEach((guideItem: KonvaNode) => {
-      if (guideItem === skipShape) {
-        // console.log("skipShape", guideItem);
-        return;
-      }
-      const box = guideItem.getClientRect();
-      // and we can snap to all edges of shapes
-      vertical.push([box.x, box.x + box.width, box.x + box.width / 2]);
-      horizontal.push([box.y, box.y + box.height, box.y + box.height / 2]);
-    });
-    return {
-      vertical: vertical.flat(),
-      horizontal: horizontal.flat(),
+  const SNAP_THRESHOLD = 10;
+
+  const handleSetSize = () => {
+    const newRects = [...rects];
+    newRects[1] = {
+      ...newRects[1],
+      height: 200,
     };
+    setRects(newRects);
   };
 
-  // what points of the object will trigger to snapping?
-  // it can be just center of the object
-  // but we will enable all edges and center
-  const getObjectSnappingEdges = (node: KonvaNode) => {
-    const box = node.getClientRect();
-    const absPos = node.absolutePosition();
-    console.log("absolutePosition", absPos);
-    console.log("Position", node.position());
-    console.log("box", box);
-
-    return {
-      vertical: [
-        {
-          guide: Math.round(box.x),
-          offset: Math.round(absPos.x - box.x),
-          snap: "start",
-        },
-        {
-          guide: Math.round(box.x + box.width / 2),
-          offset: Math.round(absPos.x - box.x - box.width / 2),
-          snap: "center",
-        },
-        {
-          guide: Math.round(box.x + box.width),
-          offset: Math.round(absPos.x - box.x - box.width),
-          snap: "end",
-        },
-      ],
-      horizontal: [
-        {
-          guide: Math.round(box.y),
-          offset: Math.round(absPos.y - box.y),
-          snap: "start",
-        },
-        {
-          guide: Math.round(box.y + box.height / 2),
-          offset: Math.round(absPos.y - box.y - box.height / 2),
-          snap: "center",
-        },
-        {
-          guide: Math.round(box.y + box.height),
-          offset: Math.round(absPos.y - box.y - box.height),
-          snap: "end",
-        },
-      ],
-    };
-  };
-
-  // find all snapping possibilities
-  const getGuides = (lineGuideStops: any, itemBounds: any) => {
-    const resultV: any = [];
-    const resultH: any = [];
-
-    lineGuideStops.vertical.forEach((lineGuide: any) => {
-      itemBounds.vertical.forEach((itemBound: any) => {
-        const diff = Math.abs(lineGuide - itemBound.guide);
-        // if the distance between guild line and object snap point is close we can consider this for snapping
-        if (diff < GUIDELINE_OFFSET) {
-          resultV.push({
-            lineGuide: lineGuide,
-            diff: diff,
-            snap: itemBound.snap,
-            offset: itemBound.offset,
-          });
-        }
-      });
+  const { handleDragging, handleDragEnd, handleResizing, handleResizeEnd } =
+    useKonvaSnapping({
+      guidelineColor: "blue",
+      guidelineDash: true,
+      snapToStageCenter: true,
+      snapRange: 5,
+      guidelineThickness: 1,
+      showGuidelines: true,
+      snapToShapes: true,
+      snapToStageBorders: true,
     });
 
-    lineGuideStops.horizontal.forEach((lineGuide: any) => {
-      itemBounds.horizontal.forEach((itemBound: any) => {
-        const diff = Math.abs(lineGuide - itemBound.guide);
-        if (diff < GUIDELINE_OFFSET) {
-          resultH.push({
-            lineGuide: lineGuide,
-            diff: diff,
-            snap: itemBound.snap,
-            offset: itemBound.offset,
-          });
-        }
-      });
-    });
-
-    const guides: GuidLine[] = [];
-
-    // find closest snap
-    const minV = resultV.sort((a: any, b: any) => a.diff - b.diff)[0];
-    const minH = resultH.sort((a: any, b: any) => a.diff - b.diff)[0];
-    if (minV) {
-      guides.push({
-        lineGuide: minV.lineGuide,
-        offset: minV.offset,
-        orientation: "V",
-        snap: minV.snap,
-      });
-    }
-    if (minH) {
-      guides.push({
-        lineGuide: minH.lineGuide,
-        offset: minH.offset,
-        orientation: "H",
-        snap: minH.snap,
-      });
-    }
-    return guides;
-  };
-
-  const handleLayerDragMove = (e: any) => {
-    const node = e.target;
-    if (node instanceof KonvaTransformer) {
-      return;
-    }
-    setGuidelines([]);
-    const lineGuideStops = getLineGuideStops(node);
-    console.log("lineGuideStops", lineGuideStops);
-    // find snapping points of current object
-    const itemBounds = getObjectSnappingEdges(node);
-    // now find where can we snap current object
-    const guidelines: GuidLine[] = getGuides(lineGuideStops, itemBounds);
-    console.log("guidelines", guidelines);
-    // do nothing of no snapping
-    if (guidelines.length === 0) {
-      return;
-    }
-    setGuidelines(guidelines);
-    const absPos = node.absolutePosition();
-    // now force object position
-    guidelines.forEach((lg) => {
-      switch (lg.orientation) {
-        case "V": {
-          absPos.x = lg.lineGuide + lg.offset;
-          break;
-        }
-        case "H": {
-          absPos.y = lg.lineGuide + lg.offset;
-          break;
-        }
-      }
-    });
-    node.absolutePosition(absPos);
-    movingNode.current = node;
-  };
-
-  const handleLayerDragEnd = () => {
-    // 更新状态保存新位置
-    if (!movingNode.current) {
-      return;
-    }
-    if (movingNode && movingNode.current) {
-      const index = rects.findIndex(
-        (r) => r.id === (movingNode.current && movingNode.current.id())
-      );
-      const newRects = [...rects];
-      newRects[index] = {
-        ...newRects[index],
-        x: movingNode.current.x(),
-        y: movingNode.current.y(),
-      };
-      setRects(newRects);
-      setGuidelines([]);
+  const handleSelect = (e: any) => {
+    if (transformerRef.current) {
+      transformerRef.current.nodes([e.target]);
     }
   };
 
@@ -364,13 +208,15 @@ export default function CoverEditor({
     <div className="flex flex-col items-center justify-center w-full h-full">
       {children}
       <Button onClick={exportImage}>export</Button>
+      <Button onClick={handleSetSize}>export</Button>
       {rects.map((item) => {
         return (
           <div key={item.id}>
-            {item.x}: {item.y}
+            {item.x}: {item.y}--{item.width}: {item.height}
           </div>
         );
       })}
+      <div>{JSON.stringify(guidelines)}</div>
       <Stage
         width={stageSize.width}
         height={stageSize.height}
@@ -378,70 +224,26 @@ export default function CoverEditor({
         ref={stageRef}
         onMouseOver={onStageEnter}
         onMouseOut={onStageOut}
-        // offsetX={-100}
       >
-        {/* <Layer>
-          <Rect x={20} y={50} width={500} height={500} fill="blue" />
-        </Layer> */}
         <Layer
           ref={layerRef}
-          onDragMove={handleLayerDragMove}
-          onDragEnd={handleLayerDragEnd}
-          // clipWidth={coverSize.width}
-          // clipHeight={coverSize.height}
-          // clipX={100}
-          // clipY={100}
+          // onDragMove={handleLayerDragMove}
+          // onDragEnd={handleLayerDragEnd}
           x={(stageSize.width - coverSize.width) / 2}
           y={(stageSize.height - coverSize.height) / 2}
-          // offetY={-(800 - coverSize.height) / 2}
         >
-          {/* <Text text="Try to drag shapes" fontSize={15} /> */}
-          {/* cover size 800*600  */}
-          <Rect
-            id="bg"
-            width={coverSize.width}
-            height={coverSize.height}
-            fill="gray"
-          />
-          <Rect
-            x={100}
-            y={100}
-            width={100}
-            height={100}
-            fill="red"
-            shadowBlur={10}
-            draggable
-          />
-          <Circle
-            x={250}
-            y={150}
-            radius={50}
-            fill="green"
-            draggable
-            stroke={"black"}
-          />
           <Group
             id="rootGroup"
             clipWidth={coverSize.width}
             clipHeight={coverSize.height}
           >
-            {/* <Rect
-              x={100}
-              y={100}
-              width={100}
-              height={100}
-              fill="red"
-              shadowBlur={10}
-              draggable
+            {/* cover size 800*600  */}
+            <Rect
+              id="bg"
+              width={coverSize.width}
+              height={coverSize.height}
+              fill="gray"
             />
-            <Circle
-              x={250}
-              y={150}
-              radius={50}
-              fill="green"
-              draggable
-              stroke={"black"}
-            /> */}
             {rects.map((rect) => (
               <Rect
                 key={rect.id}
@@ -451,50 +253,17 @@ export default function CoverEditor({
                 width={rect.width}
                 height={rect.height}
                 fill="#00D2FF"
+                onClick={handleSelect}
+                onDragMove={handleDragging}
+                onDragEnd={handleDragEnd}
                 draggable
-                // onDragMove={handleDragMove}
-                // onDragEnd={handleDragEnd}
               />
             ))}
-            {/* 绘制提示线 */}
-            {guidelines.map((line, i) => {
-              if (line.orientation === "H") {
-                return (
-                  <Line
-                    key={i}
-                    name="line"
-                    points={[-6000, 0, 6000, 0]}
-                    stroke="red"
-                    strokeWidth={1}
-                    x={0}
-                    y={
-                      line.lineGuide - (stageSize.height - coverSize.height) / 2
-                    }
-                  />
-                );
-              }
-              return (
-                <Line
-                  key={i}
-                  name="line"
-                  points={[0, -6000, 0, 6000]}
-                  stroke="red"
-                  strokeWidth={1}
-                  x={line.lineGuide - (stageSize.width - coverSize.width) / 2}
-                  y={0}
-                />
-              );
-            })}
           </Group>
           <Transformer
             ref={transformerRef}
-            boundBoxFunc={(oldBox, newBox) => {
-              // Limit resize
-              if (newBox.width < 5 || newBox.height < 5) {
-                return oldBox;
-              }
-              return newBox;
-            }}
+            onTransform={handleResizing}
+            onTransformEnd={handleResizeEnd}
             borderStroke="#000"
             borderStrokeWidth={2}
             anchorFill="#fff"
